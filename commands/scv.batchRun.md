@@ -126,14 +126,14 @@ All outputs will be saved to: ~/.scv/analysis/
 
 ### Step 3: Load Templates and Analyzer Prompt
 
-Load from SCV project context (once, reuse for all repositories):
+Load from `~/.scv/prompts/` (once, reuse for all repositories):
 
-- **Analyzer Prompt**: `prompts/project-analyzer.md`
+- **Analyzer Prompt**: `~/.scv/prompts/project-analyzer.md`
 - **Templates**:
-  - `prompts/templates/README.template.md`
-  - `prompts/templates/SUMMARY.template.md`
-  - `prompts/templates/ARCHITECTURE.template.md`
-  - `prompts/templates/FILE_INDEX.template.md`
+  - `~/.scv/prompts/templates/README.template.md`
+  - `~/.scv/prompts/templates/SUMMARY.template.md`
+  - `~/.scv/prompts/templates/ARCHITECTURE.template.md`
+  - `~/.scv/prompts/templates/FILE_INDEX.template.md`
 
 ### Step 4: Execute Batch Analysis
 

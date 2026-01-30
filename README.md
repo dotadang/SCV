@@ -39,8 +39,87 @@
 
 ## Installation
 
-Ensure the command files are located in the correct directory:
+You can install SCV either manually or using the provided installation script.
 
+### Option 1: Quick Install (Recommended)
+
+Run the installation script:
+
+```bash
+# Default (English prompts)
+./install.sh
+
+# Or specify language directly
+./install.sh --lang=en
+./install.sh --lang=zh-cn
+
+# Show help
+./install.sh --help
+```
+
+The script will:
+- Create `~/.scv` configuration directory
+- Copy the configuration file
+- Copy the selected prompt templates (default: English)
+- Copy commands to the Claude directory
+
+### Option 2: Manual Install
+
+Ensure the project files are located in the correct directory:
+
+```
+/Users/yuhaochen/Documents/codebase/SCV/
+  ├── commands/
+  │   ├── scv.gather.md
+  │   ├── scv.run.md
+  │   └── scv.batchRun.md
+  ├── prompts/
+  │   ├── zh-cn/
+  │   │   ├── project-analyzer.md
+  │   │   └── templates/
+  │   │       ├── README.template.md
+  │   │       ├── SUMMARY.template.md
+  │   │       ├── ARCHITECTURE.template.md
+  │   │       └── FILE_INDEX.template.md
+  │   └── en/
+  │       ├── project-analyzer.md
+  │       └── templates/
+  │           ├── README.template.md
+  │           ├── SUMMARY.template.md
+  │           ├── ARCHITECTURE.template.md
+  │           └── FILE_INDEX.template.md
+  └── config.example.json
+```
+
+Create the SCV configuration directory:
+
+```bash
+mkdir -p ~/.scv
+```
+
+Copy the example configuration file:
+
+```bash
+cp config.example.json ~/.scv/config.json
+```
+
+Copy prompts to SCV home directory (choose your language):
+
+```bash
+# For Chinese
+cp -r prompts/zh-cn ~/.scv/prompts
+
+# For English
+cp -r prompts/en ~/.scv/prompts
+```
+
+Copy commands to Claude's directory:
+```bash
+cp -r commands/ ~/.claude/
+```
+Or create a symbolic link:
+```bash
+ln -s $(pwd)/commands ~/.claude/commands
 ```
 /Users/yuhaochen/Documents/codebase/SCV/commands/
   ├── scv.gather.md

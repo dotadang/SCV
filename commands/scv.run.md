@@ -189,14 +189,14 @@ After repository preparation:
 
 ### Step 6: Load Templates and Prompts
 
-Load from SCV project context:
+Load from `~/.scv/prompts/`:
 
-- **Analyzer Prompt**: `prompts/project-analyzer.md`
+- **Analyzer Prompt**: `~/.scv/prompts/project-analyzer.md`
 - **Templates**:
-  - `prompts/templates/README.template.md`
-  - `prompts/templates/SUMMARY.template.md`
-  - `prompts/templates/ARCHITECTURE.template.md`
-  - `prompts/templates/FILE_INDEX.template.md`
+  - `~/.scv/prompts/templates/README.template.md`
+  - `~/.scv/prompts/templates/SUMMARY.template.md`
+  - `~/.scv/prompts/templates/ARCHITECTURE.template.md`
+  - `~/.scv/prompts/templates/FILE_INDEX.template.md`
 
 ### Step 7: Execute Analysis Workflow
 
@@ -248,12 +248,12 @@ Generate 4 documents in `~/.scv/analysis/{repo_name}/`:
 4. **FILE_INDEX.md** - File responsibility index
 
 For each document:
-- Use the corresponding template from `prompts/templates/`
+- Use the corresponding template from `~/.scv/prompts/templates/`
 - Replace placeholders `{xxx}` with actual analysis results
 - Respect conditional rendering: `<!-- IF xxx -->`, `<!-- END IF -->`
 - Handle loop rendering: `<!-- FOR xxx -->`, `<!-- END FOR -->`
 - Generate appropriate Mermaid diagrams
-- Output in Chinese
+- Output language matches the template language (from ~/.scv/prompts/)
 
 ### Step 8: Template Processing Rules
 

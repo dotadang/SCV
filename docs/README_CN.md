@@ -43,13 +43,56 @@
 
 ## 安装
 
-确保命令文件位于正确的位置：
+您可以选择使用安装脚本快速安装，或手动安装。
+
+### 选项 1：快速安装（推荐）
+
+运行安装脚本：
+
+```bash
+# 默认（英文提示词）
+./install.sh
+
+# 或直接指定语言
+./install.sh --lang=en
+./install.sh --lang=zh-cn
+
+# 查看帮助
+./install.sh --help
+```
+
+该脚本将：
+- 创建 `~/.scv` 配置目录
+- 复制配置文件
+- 复制所选语言的提示词模板（默认：英文）
+- 复制命令文件到 Claude 目录
+
+### 选项 2：手动安装
+
+确保项目文件位于正确的位置：
 
 ```
-/Users/yuhaochen/Documents/codebase/SCV/commands/
-  ├── scv.gather.md
-  ├── scv.run.md
-  └── scv.batchRun.md
+/Users/yuhaochen/Documents/codebase/SCV/
+  ├── commands/
+  │   ├── scv.gather.md
+  │   ├── scv.run.md
+  │   └── scv.batchRun.md
+  ├── prompts/
+  │   ├── zh-cn/
+  │   │   ├── project-analyzer.md
+  │   │   └── templates/
+  │   │       ├── README.template.md
+  │   │       ├── SUMMARY.template.md
+  │   │       ├── ARCHITECTURE.template.md
+  │   │       └── FILE_INDEX.template.md
+  │   └── en/
+  │       ├── project-analyzer.md
+  │       └── templates/
+  │           ├── README.template.md
+  │           ├── SUMMARY.template.md
+  │           ├── ARCHITECTURE.template.md
+  │           └── FILE_INDEX.template.md
+  └── config.example.json
 ```
 
 创建 SCV 配置目录：
@@ -57,10 +100,21 @@
 ```bash
 mkdir -p ~/.scv
 ```
+
 复制示例配置文件：
 
 ```bash
 cp config.example.json ~/.scv/config.json
+```
+
+复制提示词模板到 SCV 主目录（选择您使用的语言）：
+
+```bash
+# 中文版本
+cp -r prompts/zh-cn ~/.scv/prompts
+
+# 英文版本
+cp -r prompts/en ~/.scv/prompts
 ```
 
 将命令文件复制到 Claude Code 命令目录：
