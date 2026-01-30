@@ -1,0 +1,28 @@
+{
+  "output_dir": "~/.scv/analysis",
+  "repos": [
+    {
+      "type": "remote",
+      "url": "https://github.com/user/project1.git",
+      "project_name": "Remote Project 1",
+      "branch": "main"
+    },
+    {
+      "type": "remote",
+      "url": "https://github.com/user/project2.git",
+      "project_name": "Remote Project 2",
+      "branch": "develop"
+    },
+    {
+      "type": "local",
+      "path": "~/local/path/to/project3",
+      "project_name": "Local Project 3"
+    },
+    {
+      "type": "local",
+      "path": "~/projects/another-repo"
+    }
+  ],
+  "parallel": false,
+  "fail_fast": false
+}
