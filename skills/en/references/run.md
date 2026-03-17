@@ -92,7 +92,18 @@ If no arguments, show usage and exit.
 
 4. **Create output directory**: `mkdir -p ~/.scv/analysis/{repo_name}`
 
-5. **Display analysis plan**:
+5. **Get commit info** (Git repositories only):
+
+   ```bash
+   python3 ~/.claude/skills/scv/scripts/scv_util.py get-commit-info \
+     --repo {analysis_path}
+   ```
+
+   Output: `{ "hash": "abc123...", "short_hash": "abc123", "message": "...", ... }`
+   Store `current_commit = hash` and `short_commit = short_hash` for use in Steps 5 and 6.
+   If not a git repo or command fails, set `current_commit = null`.
+
+6. **Display analysis plan**:
    ```
    📋 Analysis Plan
 
@@ -123,6 +134,7 @@ Agent(
   - Project Path: {analysis_path}
   - Output Directory: {output_dir}
   - Project Name: {project_name}
+  - Current Commit: {current_commit or 'N/A'}
   - Templates Directory: {skill_path}/references/templates/
 
   Execute the 3-phase analysis workflow:
@@ -146,7 +158,20 @@ Agent(
 - **Consistent Quality**: Same analysis engine for both single and batch runs
 - **Token Efficiency**: Large codebase analysis doesn't pollute main context
 
-### Step 6: Completion Report
+### Step 6: Write Metadata (Git repositories only)
+
+After the subagent completes successfully, record the analyzed commit so future runs can skip unchanged repos:
+
+```bash
+python3 ~/.claude/skills/scv/scripts/scv_util.py write-metadata \
+  --repo {analysis_path} \
+  --commit {current_commit} \
+  --output-dir ~/.scv/analysis/{repo_name}
+```
+
+Skip this step if `current_commit` is null (non-Git directory) or if the subagent failed.
+
+### Step 7: Completion Report
 
 After subagent completes, display:
 

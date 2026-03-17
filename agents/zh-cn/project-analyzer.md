@@ -199,6 +199,7 @@ Phase 1: 全局扫描 → Phase 2: 深度分析 → Phase 3: 文档生成
 项目路径: {项目目录路径}
 输出目录: {文档生成位置}
 项目名称: {文档标题中使用的名称}
+当前提交: {当前 HEAD commit hash，如果是 Git 仓库}
 ```
 
 **开始分析:**
@@ -207,6 +208,7 @@ Phase 1: 全局扫描 → Phase 2: 深度分析 → Phase 3: 文档生成
    - 使用 `Glob("**/*")` 获取目录结构概览
    - 使用 `Grep` 搜索 1.1 节表格中的技术栈标记
    - 识别入口点、配置文件和测试分布
+   - 记录当前提交值 — 它将在生成的文档中作为"分析时的代码版本"展示
 
 2. **深度分析 (Phase 2)**
    - 使用 `Read` 首先读取优先级 1 的文件
@@ -217,7 +219,9 @@ Phase 1: 全局扫描 → Phase 2: 深度分析 → Phase 3: 文档生成
    - 按顺序生成文档：README.md → SUMMARY.md → ARCHITECTURE.md → FILE_INDEX.md
    - 严格遵循模板结构
    - 将所有占位符替换为实际分析内容
+   - 如果提供了当前提交信息，在 README.md 和 SUMMARY.md 中以"分析时提交: {short_hash}"格式显示
    - 不确定的内容标注 `[待确认]`
+   - 注意：元数据（commit hash → `.scv_metadata.json`）由 `batch_manager.py complete` 在本 agent 完成后写入 — 不要自行写入 metadata
 
 ---
 

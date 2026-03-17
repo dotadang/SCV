@@ -199,6 +199,7 @@ You will receive the following inputs:
 Project Path: {path to the project directory}
 Output Directory: {where to generate documents}
 Project Name: {name used in document headers}
+Current Commit: {current HEAD commit hash, if Git repository}
 ```
 
 **Start your analysis:**
@@ -207,6 +208,7 @@ Project Name: {name used in document headers}
    - Use `Glob("**/*")` to get directory structure overview
    - Use `Grep` to search for technology markers from the table in section 1.1
    - Identify entry points, config files, and test distribution
+   - Note the Current Commit value — it will be shown in generated documents as the analyzed code version
 
 2. **Deep Analysis (Phase 2)**
    - Read Priority 1 files first using `Read`
@@ -217,7 +219,9 @@ Project Name: {name used in document headers}
    - Generate documents in order: README.md → SUMMARY.md → ARCHITECTURE.md → FILE_INDEX.md
    - Follow template structure strictly
    - Replace all placeholders with actual analysis content
+   - If Current Commit is provided, display it in README.md and SUMMARY.md as "Analyzed at commit: {short_hash}"
    - Mark uncertain content with `[To be confirmed]`
+   - Note: metadata (commit hash → `.scv_metadata.json`) is written by `batch_manager.py complete` after this agent finishes — do NOT write metadata yourself
 
 ---
 

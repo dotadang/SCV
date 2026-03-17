@@ -2,185 +2,233 @@
 
 使用并行 `project-analyzer` subagent 批量分析多个仓库。
 
+---
+
+## ⛔ 核心约束（必须遵守）
+
+| 约束 | 值 | 说明 |
+|------|-----|------|
+| **最大并发数** | **config 中的 `batch_size`** | 每批次最多启动的 subagent 数（默认：5），硬性限制，不可覆盖 |
+| **批次处理** | **必须** | 所有仓库必须按批次处理，每批次完成后才能启动下一批 |
+| **Python 驱动状态** | **必须** | 所有计划制定、git 操作和批次划分均由 `batch_manager.py plan` 完成，LLM 不得自行计算批次 |
+
+**违反约束的后果：**
+- 超过 `batch_size` 个并发 subagent 会导致系统资源耗尽
+- 不按批次处理会导致 subagent 失控、无法追踪进度
+
+---
+
 ## 用法
 
 ```
-/scv batchRun
+/scv batchRun [--analyze-only]
 ```
 
-从 `~/.scv/config.json` 读取仓库配置，批量执行分析。
+从 `~/.scv/config.json` 读取配置，将所有计划制定委托给 `batch_manager.py plan`，然后按批次执行分析。
+
+**选项：**
+- `--analyze-only`: 跳过 git clone/pull，仅验证本地路径是否存在
 
 ## 核心优势
 
 | 特性 | 说明 |
 |------|------|
-| **真正并行** | 为每个仓库 fork 独立的 `project-analyzer` subagent |
-| **Context 隔离** | 每个分析在独立 context 中完成 |
-| **进度追踪** | 实时显示每个仓库的分析进度 |
+| **Python 控制批次** | `batch_manager.py` 负责所有状态、git 操作和批次划分 — LLM 不会计错数 |
+| **配置驱动并发** | config.json 中的 `batch_size` 设置硬性限制，不可通过 prompt 覆盖 |
+| **Context 隔离** | 每个分析在独立 subagent context 中完成 |
 | **容错处理** | 单个失败不影响其他分析 |
+| **崩溃恢复** | 幂等的 `next` 命令在恢复时返回进行中的批次 |
+
+---
 
 ## 执行步骤
 
-### Step 1: 检查并加载配置
+### Step 1: 检查配置
 
-1. **验证配置文件存在**: `~/.scv/config.json`
-2. 如果缺失，报告错误并提供示例：
-   ```
-   ❌ 配置文件未找到: ~/.scv/config.json
-
-   请创建以下结构的配置文件:
-
-   {
-     "output_dir": "~/.scv/analysis",
-     "repos": [
-       {
-         "type": "remote",
-         "url": "https://github.com/user/repo1.git",
-         "project_name": "Remote Project 1",
-         "branch": "main"
-       },
-       {
-         "type": "local",
-         "path": "~/local/path/to/repo2",
-         "project_name": "Local Project 2"
-       }
-     ],
-     "parallel": true,
-     "fail_fast": false
-   }
-   ```
-
-3. **加载并验证配置**：
-   - 解析 JSON
-   - 验证 `repos` 数组存在
-   - 获取 `output_dir`（默认: `~/.scv/analysis`）
-   - 验证每个仓库条目：
-     - `type`: 必须是 `"remote"` 或 `"local"`
-     - 远程仓库：验证 `url` 有效
-     - 本地仓库：验证 `path` 存在
-
-### Step 2: 显示分析计划
+验证 `~/.scv/config.json` 是否存在。如果缺失：
 
 ```
-📋 批量分析计划
+❌ 配置文件未找到: ~/.scv/config.json
 
-配置文件: ~/.scv/config.json
-输出目录: ~/.scv/analysis
-仓库数量: {N} (远程: {N}, 本地: {N})
-并行执行: {true/false}
-快速失败: {true/false}
+请创建配置文件:
 
-待分析仓库:
-  1. [remote] {project_name}
-     URL: {url}
-     分支: {branch}
-     本地路径: ~/.scv/repos/{repo_name}
-     输出: ~/.scv/analysis/{repo_name}
-
-  2. [local] {project_name}
-     路径: {path}
-     输出: ~/.scv/analysis/{repo_name}
-
-  ...
-
-总计: {N} 个仓库
-所有输出将保存到: ~/.scv/analysis/
+{
+  "output_dir": "~/.scv/analysis",
+  "batch_size": 5,
+  "repos": [
+    {
+      "type": "remote",
+      "url": "https://github.com/user/repo1.git",
+      "project_name": "Remote Project 1",
+      "branch": "main"
+    },
+    {
+      "type": "local",
+      "path": "~/local/path/to/repo2",
+      "project_name": "Local Project 2"
+    }
+  ],
+  "parallel": true,
+  "fail_fast": false
+}
 ```
 
-### Step 3: 准备仓库
+### Step 2: 运行 `batch_manager.py plan`（Python 处理一切）
 
-**对于远程仓库**，在分析前执行 git 操作：
+> ⛔ **强制要求：必须先调用 `plan`。不得自行读取 config，不得自行运行 git，不得自行计算批次。**
+>
+> `plan` 原子性地完成以下所有操作：
+> 1. 读取 `~/.scv/config.json`（包括 `batch_size`）
+> 2. 对每个远程仓库执行 `git clone` 或 `git pull`
+> 3. 验证本地仓库路径是否存在
+> 4. 将仓库划分为 `batch_size` 大小的批次
+> 5. 将完整执行计划持久化到 `~/.scv/sessions/{session_id}.json`
 
-1. 提取 `repo_name`: `basename(url)` 去掉 `.git`
-2. 本地路径: `~/.scv/repos/{repo_name}`
-3. 检查是否存在：
-   - 存在：`git pull {branch}`
-   - 不存在：`git clone -b {branch} {url} {repo_name}`
-4. 显示结果：
-   ```
-   🔄 远程仓库: {project_name}
-   📁 本地: ~/.scv/repos/{repo_name}
-   🌿 分支: {branch}
+**获取当前 session ID**：从 OpenCode 会话上下文（`session_id` 字段）中获取。
+如果无法获取，使用时间戳生成回退值：`scv_batch_{timestamp}`。
 
-   ✅ Git pull 完成
-   最新: {commit_hash} - {commit_message}
-   ```
+```bash
+python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+  --session {YOUR_SESSION_ID} \
+  --config ~/.scv/config.json
+```
 
-**对于本地仓库**：
-1. 提取 `repo_name`: `basename(path)`
-2. 验证路径存在且可访问
-3. 显示：
-   ```
-   📂 本地仓库: {project_name}
-   📁 路径: {path}
-   ```
+`--analyze-only` 模式（跳过 git 操作）：
 
-### Step 4: 创建任务列表进行追踪
+```bash
+python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+  --session {YOUR_SESSION_ID} \
+  --config ~/.scv/config.json \
+  --analyze-only
+```
 
-**使用 TodoWrite 创建任务列表追踪所有仓库分析：**
+预期输出：
+
+```json
+{
+  "status": "planned",
+  "session_id": "ses_abc123",
+  "total_repos": 10,
+  "ready_repos": 8,
+  "failed_repos": 1,
+  "skipped_repos": 1,
+  "total_batches": 2,
+  "batch_size": 5,
+  "git_errors": [
+    { "repo": "some_repo", "error": "git clone failed: ..." }
+  ],
+  "skipped": [
+    { "repo": "unchanged_repo", "reason": "Commit unchanged since 2026-03-17T06:00:00+00:00" }
+  ],
+  "state_file": "~/.scv/sessions/ses_abc123.json"
+}
+```
+
+如果 `failed_repos > 0`，这些仓库已在计划中标记为 `failed` — 批次执行时会自动跳过。向用户报告 git 错误后继续执行。
+
+如果 `skipped_repos > 0`，这些仓库的 commit hash 与上次分析相同，无需重新分析。向用户报告为"文档已是最新"。
+
+**创建 TodoWrite 以显示 UI 进度：**
 
 ```
 TodoWrite([
-  { content: "分析 {project_name_1}", status: "in_progress", activeForm: "正在分析 {project_name_1}" },
-  { content: "分析 {project_name_2}", status: "pending", activeForm: "正在分析 {project_name_2}" },
+  { content: "批次 1/{total_batches}: 仓库 1-{batch_size}", status: "pending" },
+  { content: "批次 2/{total_batches}: 仓库 ...", status: "pending" },
   ...
-  { content: "分析 {project_name_N}", status: "pending", activeForm: "正在分析 {project_name_N}" }
+  { content: "生成最终汇总", status: "pending" }
 ])
 ```
 
-这样可以：
-- 实时追踪所有仓库的分析进度
-- 清晰显示已完成与待处理任务
-- 在批量摘要中汇总最终结果
+### Step 3: 批次并行执行（由 `next` 驱动）
 
-### Step 5: 并发执行（限制最大并发数）
+> ⛔ **批次循环必须由 `batch_manager.py next` 驱动，绝不能从 in-context 记忆中继续。**
+>
+> `next` 精确返回下一批的仓库列表 — LLM 为每个仓库 fork 一个 subagent，收集所有结果，上报后再次调用 `next`。
 
-⚠️ **关键约束：最大并发 subagent 数必须为 5，这是硬性限制！**
-
-**为什么必须限制并发数？**
-- 同时启动过多 subagent 会消耗大量系统资源
-- 可能导致 API 限流或超时
-- 影响整体任务稳定性
-
-**批次处理逻辑（伪代码）：**
+#### 3.1 批次循环
 
 ```
-repos = [repo1, repo2, ..., repoN]  # 所有仓库
-BATCH_SIZE = 5                       # 每批最多 5 个
-
-for batch_start in range(0, len(repos), BATCH_SIZE):
-    batch = repos[batch_start : batch_start + BATCH_SIZE]
-
-    # Step A: 在同一个 turn 中 fork 本批次的 subagents
-    for repo in batch:
-        Agent(subagent_type="project-analyzer", ..., run_in_background=true)
-
-    # Step B: 【关键】必须等待本批次全部完成才能继续下一批
-    # 使用 TaskOutput 等待每个 subagent 完成
-    for each agent_task_id in batch:
-        TaskOutput(task_id=agent_task_id, block=true, timeout=600000)
-
-    # Step C: 本批次全部完成后，才进入下一批次循环
+┌─────────────────────────────────────────────────────────────────────┐
+│  循环：重复执行，直到 `next` 退出码为 2                              │
+│                                                                     │
+│  ① batch_manager.py next --session {id}                             │
+│     → 返回 JSON: { batch_num, total_batches, batch_size, repos }    │
+│     → 退出码 2 = 无更多批次 → 退出循环                              │
+│                                                                     │
+│  ② 将本批次所有仓库同时 fork 为后台 subagent                        │
+│     （使用计划中已解析好的 repo.local_path）                        │
+│                                                                     │
+│  ③ 阻塞等待本批次所有 subagent 完成                                  │
+│     （对每个 task_id 调用 background_output）                       │
+│                                                                     │
+│  ④ 对每个结果：                                                      │
+│     成功 → batch_manager.py complete --session {id} --repo {name}  │
+│     失败 → batch_manager.py fail --session {id} --repo {name}      │
+│                                --error "msg"                        │
+│                                                                     │
+│  ⑤ 标记当前批次 todo 为已完成                                        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**⚠️ 严格执行要求：**
-1. **不得在一个 turn 中 fork 超过 5 个 subagent**
-2. **每批次必须使用 TaskOutput 阻塞等待完成**，不能只是启动后继续
-3. **只有当前批次全部完成后**，才能在下一个 turn 中启动下一批次
+#### 3.2 执行伪代码
 
-**每批使用 Agent tool fork subagent：**
+```
+SESSION_ID = {YOUR_SESSION_ID}
+BM = "python3 ~/.claude/skills/scv/scripts/batch_manager.py"
+
+while True:
+    result = Bash(f"{BM} next --session {SESSION_ID}")
+    if result.exit_code == 2:
+        break
+
+    batch = parse_json(result.stdout)
+    batch_num = batch["batch_num"]
+    total_batches = batch["total_batches"]
+    repos = batch["repos"]          # local_path 已由 plan 解析完毕
+    output_dir = batch["output_dir"]
+
+    print(f"🔄 批次 {batch_num}/{total_batches}（{len(repos)} 个仓库）")
+    TodoWrite - 标记 "批次 {batch_num}/{total_batches}" 为进行中
+
+    # 同时 fork 所有 subagent
+    task_ids = {}
+    for repo in repos:
+        task_id = Agent(
+            subagent_type="project-analyzer",
+            description=f"分析 {repo['project_name']}",
+            prompt=build_prompt(repo, output_dir),
+            run_in_background=True
+        )
+        task_ids[repo["project_name"]] = task_id
+
+    # 收集所有结果后再继续
+    for repo_name, task_id in task_ids.items():
+        output = background_output(task_id=task_id, block=True, timeout=600000)
+        if output.success:
+            Bash(f"{BM} complete --session {SESSION_ID} --repo '{repo_name}'")
+        else:
+            Bash(f"{BM} fail --session {SESSION_ID} --repo '{repo_name}' --error '{output.error}'")
+
+    TodoWrite - 标记 "批次 {batch_num}/{total_batches}" 为已完成
+
+print("✅ 所有批次完成")
+```
+
+#### 3.3 Subagent 调用模板
 
 ```
 Agent(
   subagent_type="project-analyzer",
-  description="分析 {project_name}",
+  description="分析 {repo['project_name']}",
   prompt="""
   分析代码仓库并生成文档。
 
   输入参数：
-  - 项目路径: {analysis_path}
-  - 输出目录: {output_dir}/{repo_name}/
-  - 项目名称: {project_name}
+  - 项目路径: {repo['local_path']}
+  - 输出目录: {output_dir}/{repo['repo_name']}/
+  - 项目名称: {repo['project_name']}
+  - 当前提交: {repo.get('current_commit', 'N/A')}
   - 模板目录: {skill_path}/references/templates/
 
   执行 3 阶段分析工作流：
@@ -196,47 +244,48 @@ Agent(
 
   严格遵循模板格式，不确定项标记 [待确认]。
   """,
-  run_in_background=true
+  run_in_background=True
 )
 ```
 
-**每个 subagent 完成后，更新任务列表：**
+> **说明：** `repo['current_commit']` 由 `batch_manager.py plan` 填充并存储在 session 状态中。非 Git 本地目录时值为 `None`。
+
+#### 3.4 顺序执行模式（`parallel: false`）
+
+- 仍调用 `next` 获取每批
+- 每次只 fork 一个 subagent，阻塞等待完成后再处理下一个
+- 适用于调试或资源受限场景
+
+#### 3.5 崩溃恢复
+
+```bash
+# 查看仍在进行中或待处理的任务
+python3 ~/.claude/skills/scv/scripts/batch_manager.py resume --session {SESSION_ID}
+
+# 再次调用 next — 返回被中断的批次（幂等操作）
+python3 ~/.claude/skills/scv/scripts/batch_manager.py next --session {SESSION_ID}
+```
+
+`next` 是**幂等的**：如果某批次已处于 `in_progress` 状态，它会返回同一批次而不是向前跳。崩溃后可安全重新运行，不会重复或遗漏任何仓库。
+
+### Step 4: 追踪进度
 
 ```
-TodoWrite - 将对应任务标记为已完成
-```
-
-**当 `parallel = false` 时，顺序执行：**
-
-逐个处理仓库，等待每个完成后再开始下一个。
-
-### Step 6: 追踪进度
-
-**并行模式下**，每个 subagent 完成时收到通知并更新任务状态：
-
-```
-✅ [1/3] {project_name} 完成
-   类型: remote
-   📁 本地: ~/.scv/repos/{repo_name}
+✅ [1/N] {project_name} 完成
+   📁 路径: {local_path}
    📂 输出: ~/.scv/analysis/{repo_name}/
-   📄 4 个文档已生成
-   🌿 分支: {branch}
+   📦 提交: {short_commit_hash} - {commit_message}
+   📄 已生成 4 个文档
 
-✅ [2/3] {project_name} 完成
-   类型: local
-   📁 路径: {path}
-   📂 输出: ~/.scv/analysis/{repo_name}/
-   📄 4 个文档已生成
+⏭️ [2/N] {project_name} 已跳过（提交未变更）
+   📦 提交: {short_commit_hash}（与上次分析相同）
+   💡 文档已是最新，无需重新分析
 
-❌ [3/3] {project_name} 失败 - 分析失败
-   类型: {remote/local}
-   📁 路径: {actual_path}
+❌ [3/N] {project_name} 失败
    🚫 错误: {error_message}
 ```
 
-### Step 7: 生成批量摘要
-
-所有分析完成后（或 `fail_fast = true` 时停止），验证 TodoWrite 中所有任务已完成：
+### Step 5: 生成批量摘要
 
 ```
 ╔════════════════════════════════════════════════════════════╗
@@ -244,61 +293,47 @@ TodoWrite - 将对应任务标记为已完成
 ╚════════════════════════════════════════════════════════════╝
 
 配置文件: ~/.scv/config.json
-输出目录: ~/.scv/analysis
+输出目录: ~/.scv/analysis/
+批次大小: {batch_size}
 执行方式: {sequential/parallel}
-持续时间: {X 分钟 Y 秒}
 
 结果:
   ✅ 成功: {N}/{total}
   ❌ 失败: {N}/{total}
-  ⏭️ 跳过: {N}/{total}
-
-  远程仓库: {N} 个已分析
-  本地仓库: {N} 个已分析
+  ⏭️ 跳过（提交未变更）: {N}/{total}
 
 成功仓库:
   1. [remote] {project_name} → ~/.scv/analysis/{repo_name}/
-  2. [local] {project_name} → ~/.scv/analysis/{repo_name}/
-  ...
+  2. [local]  {project_name} → ~/.scv/analysis/{repo_name}/
+
+跳过仓库（提交未变更）:
+  1. {project_name} → 上次分析: {last_analyzed_at}
 
 失败仓库:
-  1. [remote] {project_name} → {error}
-  2. [local] {project_name} → {error}
-  ...
-
-输出位置:
-  所有分析保存到: ~/.scv/analysis/
-  远程仓库克隆到: ~/.scv/repos/
+  1. {project_name} → {error}
 ```
 
-### Step 8: 建议下一步
+### Step 6: 建议下一步
 
 ```
-接下来可以做什么？
-
-  📖 浏览文档
-     - 打开 ~/.scv/analysis/ 查看生成的文档
-
-  🔍 分析单个仓库
-     - 使用 /scv run <repo_path> 进行针对性分析
-
-  🌐 收集远程仓库
-     - 使用 /scv gather --batch 克隆/拉取所有远程仓库
-
-  🔄 重新运行批量分析
-     - 使用 /scv batchRun 重新生成所有文档（会自动拉取远程仓库）
-
-  📋 列出所有仓库
-     - 使用 /scv gather --list 查看已克隆的远程仓库
+📖 浏览文档:    open ~/.scv/analysis/
+🔍 分析单仓库:  /scv run <repo_path>
+🔄 重新运行:    /scv batchRun
+📋 列出仓库:    /scv gather --list
 ```
 
-## 配置文件 Schema
+---
+
+## 配置文件参考
 
 ### ~/.scv/config.json
 
 ```json
 {
   "output_dir": "~/.scv/analysis",
+  "batch_size": 5,
+  "parallel": true,
+  "fail_fast": false,
   "repos": [
     {
       "type": "remote",
@@ -311,60 +346,26 @@ TodoWrite - 将对应任务标记为已完成
       "path": "~/local/path/to/repo",
       "project_name": "本地项目"
     }
-  ],
-  "parallel": true,
-  "fail_fast": false
+  ]
 }
 ```
-
-### 字段说明
 
 | 字段 | 必填 | 说明 | 默认值 |
 |------|------|------|--------|
 | `output_dir` | 否 | 所有分析的输出目录 | `~/.scv/analysis` |
-| `parallel` | 否 | 并行执行 | `true` |
-| `fail_fast` | 否 | 遇到错误停止 | `false` |
+| `batch_size` | 否 | 每批次最大并发 subagent 数 | `5` |
+| `parallel` | 否 | 批次内并行（false = 顺序） | `true` |
+| `fail_fast` | 否 | 第一个失败时停止全部 | `false` |
 
-**远程仓库字段：**
-- `type`: `"remote"` (必需)
-- `url`: Git 仓库 URL (必需)
-- `project_name`: 项目名称 (可选)
-- `branch`: 分支 (可选)
+---
 
-**本地仓库字段：**
-- `type`: `"local"` (必需)
-- `path`: 本地路径 (必需，支持 `~`)
-- `project_name`: 项目名称 (可选)
+## 执行要求汇总
 
-## 错误处理
-
-| 错误 | 处理方式 |
-|------|----------|
-| 配置文件未找到 | 显示示例配置，退出 |
-| 无效的仓库类型 | 报告错误，跳过该仓库 |
-| Git pull 失败 | 报告错误，根据 `fail_fast` 决定是否继续 |
-| 本地路径不存在 | 报告错误，跳过该仓库 |
-| 分析失败 | 记录错误，继续其他仓库 |
-
-## Subagent 策略详解
-
-### 为什么使用 Subagent？
-
-1. **Context 隔离**：每个仓库分析在独立 context 中，避免 token 累积
-2. **真正并行**：多个 subagent 同时运行，大幅减少总时间
-3. **容错性**：单个分析失败不影响其他
-4. **可追踪**：每个 subagent 完成时收到通知
-
-### 使用 project-analyzer Subagent
-
-使用专用的 `project-analyzer` subagent 类型：
-- **工具**：Read, Write, Glob, Grep, LSP（专为代码分析优化）
-- **专注**：单一代码深度分析
-- **输出**：遵循模板的结构化文档
-
-## 最佳实践
-
-1. **首次运行**：先运行 `/scv gather --batch` 克隆所有远程仓库
-2. **定期更新**：`batchRun` 会自动 pull，但也可手动 `--update-all`
-3. **检查配置**：定期查看 `~/.scv/gather --list` 确认仓库状态
-4. **并行设置**：根据机器性能调整 `parallel` 和仓库数量
+| 要求 | 规则 | 违反后果 |
+|------|------|----------|
+| 必须先调用 `plan` | 始终在 `next` 之前执行 | 状态过时或缺失 |
+| 不得自行解析 config | `plan` 负责 config 读取 | 批次划分错误 |
+| 不得自行运行 git | `plan` 负责 git 操作 | 本地状态分叉 |
+| 必须调用 `next` 获取批次 | 不得从记忆中计算 | 仓库错误，静默跳过 |
+| 收集所有结果后再进入下一批 | 批次间串行 | 状态乱序 |
+| 每个仓库必须调用 `complete` 或 `fail` | 不得例外 | 状态与实际不符 |

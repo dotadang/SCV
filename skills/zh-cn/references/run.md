@@ -92,7 +92,18 @@ mkdir -p ~/.scv/analysis
 
 4. **创建输出目录**: `mkdir -p ~/.scv/analysis/{repo_name}`
 
-5. **显示分析计划**:
+5. **获取 commit 信息**（仅 Git 仓库）：
+
+   ```bash
+   python3 ~/.claude/skills/scv/scripts/scv_util.py get-commit-info \
+     --repo {analysis_path}
+   ```
+
+   输出: `{ "hash": "abc123...", "short_hash": "abc123", "message": "...", ... }`
+   保存 `current_commit = hash` 和 `short_commit = short_hash`，供 Step 5 和 Step 6 使用。
+   若非 Git 仓库或命令失败，设置 `current_commit = null`。
+
+6. **显示分析计划**:
    ```
    📋 分析计划
 
@@ -123,6 +134,7 @@ Agent(
   - 项目路径: {analysis_path}
   - 输出目录: {output_dir}
   - 项目名称: {project_name}
+  - 当前提交: {current_commit or 'N/A'}
   - 模板目录: {skill_path}/references/templates/
 
   执行 3 阶段分析工作流：
@@ -146,7 +158,20 @@ Agent(
 - **质量一致**：单仓库和批量分析使用相同分析引擎
 - **Token 效率**：大型代码库分析不会污染主 context
 
-### Step 6: 完成报告
+### Step 6: 写入元数据（仅 Git 仓库）
+
+subagent 成功完成后，记录已分析的 commit，以便下次运行时跳过未变更的仓库：
+
+```bash
+python3 ~/.claude/skills/scv/scripts/scv_util.py write-metadata \
+  --repo {analysis_path} \
+  --commit {current_commit} \
+  --output-dir ~/.scv/analysis/{repo_name}
+```
+
+如果 `current_commit` 为 null（非 Git 目录）或 subagent 失败，则跳过此步骤。
+
+### Step 7: 完成报告
 
 subagent 完成后显示：
 

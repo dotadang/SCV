@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0] - 2026-03-17
+
+### Added
+- **Incremental analysis (skip unchanged repos)**
+  - `batchRun` and `run` now detect the HEAD commit of each repository before analysis
+  - Repos whose HEAD commit hasn't changed since the last analysis are skipped automatically
+  - Per-repo `.scv_metadata.json` stores the last-analyzed commit hash and timestamp
+  - `batchRun` plan step marks unchanged repos as `skipped`, `complete` step writes metadata on success
+  - `run.md` updated with commit detection (Step 4), metadata writing (Step 6), and updated step numbering
+
+- **`scv_util.py` — new CLI utility script**
+  - Provides three CLI commands: `get-commit-info`, `check-skip`, `write-metadata`
+  - `check-skip` exits with code `2` when a repo can be skipped (no changes since last run)
+  - `write-metadata` writes `.scv_metadata.json` to the analysis output directory
+  - Also importable as a Python module (used by `batch_manager.py`)
+
+- **`git_op.py` enhancements**
+  - Added `get_head_commit(repo_path)` to retrieve the current HEAD commit hash
+  - Added `get_commit_info(repo_path)` to return commit hash + author + message as a dict
+
+### Changed
+- **`batch_manager.py` refactored**
+  - `plan()` now marks repos with unchanged commits as `skipped` before dispatching subagents
+  - `complete()` writes `.scv_metadata.json` via `scv_util` after successful analysis
+  - Imports migrated from removed `metadata.py` to `scv_util.py`
+
+- **`project-analyzer` agent updated (en + zh-cn)**
+  - Added `Current Commit` as an input parameter passed by the orchestrator
+  - Clarified that the agent displays the commit in its output but does not write metadata itself
+
+- **`batchRun.md` updated (en + zh-cn)**
+  - Plan output example now includes `skipped_repos` and per-repo `skipped` flag
+  - Step 4 documents the skip logic and exit-code handling
+  - Step 5 summary includes skipped repo count
+
+### Removed
+- **`metadata.py`** — logic fully consolidated into `scv_util.py`
+
 ## [v0.4.1] - 2026-03-09
 
 ### Fixed
@@ -110,7 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project analyzer prompts and templates
 - Skills: `scv.run`, `scv.batchRun`, `scv.gather`
 
-[Unreleased]: https://github.com/projanvil/SCV/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/projanvil/SCV/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/projanvil/SCV/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/projanvil/SCV/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/projanvil/SCV/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/projanvil/SCV/compare/0.2.0...v0.3.0

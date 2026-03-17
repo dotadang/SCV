@@ -2,185 +2,233 @@
 
 Batch analyze multiple repositories using parallel `project-analyzer` subagents.
 
+---
+
+## ⛔ Core Constraints (MUST FOLLOW)
+
+| Constraint | Value | Description |
+|------------|-------|-------------|
+| **Max Concurrency** | **`batch_size` from config** | Hard limit on concurrent subagents per batch (default: 5) |
+| **Batch Processing** | **REQUIRED** | Next batch starts only after current batch fully completes |
+| **Python-Driven State** | **REQUIRED** | All planning, git ops, and batch splits are done by `batch_manager.py plan`. The LLM NEVER computes batches itself |
+
+**Consequences of violating constraints:**
+- Exceeding `batch_size` concurrent subagents exhausts system resources
+- Not processing in batches leads to untrackable subagents and lost progress
+
+---
+
 ## Usage
 
 ```
-/scv batchRun
+/scv batchRun [--analyze-only]
 ```
 
-Reads repository configuration from `~/.scv/config.json` and executes batch analysis.
+Reads `~/.scv/config.json`, delegates all planning to `batch_manager.py plan`, then executes analysis in batches.
+
+**Options:**
+- `--analyze-only`: Skip git clone/pull, only verify local paths exist
 
 ## Core Advantages
 
 | Feature | Description |
 |---------|-------------|
-| **True Parallelism** | Fork independent `project-analyzer` subagent for each repo |
-| **Context Isolation** | Each analysis completes in isolated context |
-| **Progress Tracking** | Real-time progress for each repository |
+| **Python-Controlled Batching** | `batch_manager.py` owns all state, git ops, and batch splits — LLM cannot miscount |
+| **Config-Driven Concurrency** | `batch_size` in config.json sets the hard limit, no prompt-level override |
+| **Context Isolation** | Each analysis runs in isolated subagent context |
 | **Fault Tolerance** | Single failure doesn't affect other analyses |
+| **Crash Recovery** | Idempotent `next` command returns in-progress batch on resume |
+
+---
 
 ## Execution Steps
 
-### Step 1: Check and Load Configuration
+### Step 1: Check Configuration
 
-1. **Verify config file exists**: `~/.scv/config.json`
-2. If missing, report error with example:
-   ```
-   ❌ Configuration file not found: ~/.scv/config.json
-
-   Please create a config file with this structure:
-
-   {
-     "output_dir": "~/.scv/analysis",
-     "repos": [
-       {
-         "type": "remote",
-         "url": "https://github.com/user/repo1.git",
-         "project_name": "Remote Project 1",
-         "branch": "main"
-       },
-       {
-         "type": "local",
-         "path": "~/local/path/to/repo2",
-         "project_name": "Local Project 2"
-       }
-     ],
-     "parallel": true,
-     "fail_fast": false
-   }
-   ```
-
-3. **Load and validate configuration**:
-   - Parse JSON
-   - Verify `repos` array exists
-   - Get `output_dir` (default: `~/.scv/analysis`)
-   - Validate each repository entry:
-     - `type`: must be `"remote"` or `"local"`
-     - Remote repo: validate `url` is valid
-     - Local repo: validate `path` exists
-
-### Step 2: Display Analysis Plan
+Verify `~/.scv/config.json` exists. If missing:
 
 ```
-📋 Batch Analysis Plan
+❌ Configuration file not found: ~/.scv/config.json
 
-Config file: ~/.scv/config.json
-Output directory: ~/.scv/analysis
-Repository count: {N} (remote: {N}, local: {N})
-Parallel execution: {true/false}
-Fail fast: {true/false}
+Please create a config file:
 
-Repositories to analyze:
-  1. [remote] {project_name}
-     URL: {url}
-     Branch: {branch}
-     Local path: ~/.scv/repos/{repo_name}
-     Output: ~/.scv/analysis/{repo_name}
-
-  2. [local] {project_name}
-     Path: {path}
-     Output: ~/.scv/analysis/{repo_name}
-
-  ...
-
-Total: {N} repositories
-All outputs will be saved to: ~/.scv/analysis/
+{
+  "output_dir": "~/.scv/analysis",
+  "batch_size": 5,
+  "repos": [
+    {
+      "type": "remote",
+      "url": "https://github.com/user/repo1.git",
+      "project_name": "Remote Project 1",
+      "branch": "main"
+    },
+    {
+      "type": "local",
+      "path": "~/local/path/to/repo2",
+      "project_name": "Local Project 2"
+    }
+  ],
+  "parallel": true,
+  "fail_fast": false
+}
 ```
 
-### Step 3: Prepare Repositories
+### Step 2: Run `batch_manager.py plan` (Python Handles Everything)
 
-**For remote repositories**, execute git operations before analysis:
+> ⛔ **MANDATORY: Call `plan` first. Do NOT read config yourself, do NOT run git manually, do NOT calculate batches.**
+>
+> `plan` does all of this atomically:
+> 1. Reads `~/.scv/config.json` (including `batch_size`)
+> 2. Runs `git clone` or `git pull` for every remote repo
+> 3. Verifies local repo paths exist
+> 4. Splits repos into batches of `batch_size`
+> 5. Persists the full execution plan to `~/.scv/sessions/{session_id}.json`
 
-1. Extract `repo_name`: `basename(url)` remove `.git`
-2. Local path: `~/.scv/repos/{repo_name}`
-3. Check if exists:
-   - Exists: `git pull {branch}`
-   - Not exists: `git clone -b {branch} {url} {repo_name}`
-4. Display result:
-   ```
-   🔄 Remote repository: {project_name}
-   📁 Local: ~/.scv/repos/{repo_name}
-   🌿 Branch: {branch}
+**Get the current session ID** from the OpenCode session context (`session_id` field).
+If unavailable, use a timestamp-based fallback: `scv_batch_{timestamp}`.
 
-   ✅ Git pull complete
-   Latest: {commit_hash} - {commit_message}
-   ```
+```bash
+python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+  --session {YOUR_SESSION_ID} \
+  --config ~/.scv/config.json
+```
 
-**For local repositories**:
-1. Extract `repo_name`: `basename(path)`
-2. Verify path exists and is accessible
-3. Display:
-   ```
-   📂 Local repository: {project_name}
-   📁 Path: {path}
-   ```
+For `--analyze-only` mode (skip git operations):
 
-### Step 4: Create Task List for Tracking
+```bash
+python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+  --session {YOUR_SESSION_ID} \
+  --config ~/.scv/config.json \
+  --analyze-only
+```
 
-**Use TodoWrite to create a task list for tracking all repository analyses:**
+Expected output:
+
+```json
+{
+  "status": "planned",
+  "session_id": "ses_abc123",
+  "total_repos": 10,
+  "ready_repos": 8,
+  "failed_repos": 1,
+  "skipped_repos": 1,
+  "total_batches": 2,
+  "batch_size": 5,
+  "git_errors": [
+    { "repo": "some_repo", "error": "git clone failed: ..." }
+  ],
+  "skipped": [
+    { "repo": "unchanged_repo", "reason": "Commit unchanged since 2026-03-17T06:00:00+00:00" }
+  ],
+  "state_file": "~/.scv/sessions/ses_abc123.json"
+}
+```
+
+If `failed_repos > 0`, those repos are already marked `failed` in the plan — they will be skipped in batch execution. Report the git errors to the user but continue.
+
+If `skipped_repos > 0`, those repos have the same commit hash as their last successful analysis — no new analysis needed. Report them to the user as "up-to-date".
+
+**Create TodoWrite for UI visibility:**
 
 ```
 TodoWrite([
-  { content: "Analyze {project_name_1}", status: "in_progress", activeForm: "Analyzing {project_name_1}" },
-  { content: "Analyze {project_name_2}", status: "pending", activeForm: "Analyzing {project_name_2}" },
+  { content: "Batch 1/{total_batches}: repos 1-{batch_size}", status: "pending" },
+  { content: "Batch 2/{total_batches}: repos ...", status: "pending" },
   ...
-  { content: "Analyze {project_name_N}", status: "pending", activeForm: "Analyzing {project_name_N}" }
+  { content: "Generate final summary", status: "pending" }
 ])
 ```
 
-This enables:
-- Real-time progress tracking across all repositories
-- Clear visibility of completed vs pending tasks
-- Final result aggregation in batch summary
+### Step 3: Batch Parallel Execution (Loop Driven by `next`)
 
-### Step 5: Parallel Execution with Concurrency Limit
+> ⛔ **The batch loop MUST be driven by `batch_manager.py next`. Never continue from in-context memory.**
+>
+> `next` returns exactly the repos for the next batch — the LLM forks one subagent per repo, collects all results, reports back, then calls `next` again.
 
-⚠️ **Critical Constraint: Maximum concurrent subagents MUST be 5. This is a hard limit!**
-
-**Why must we limit concurrency?**
-- Too many simultaneous subagents consume excessive system resources
-- May cause API rate limiting or timeouts
-- Affects overall task stability
-
-**Batch Processing Logic (Pseudocode):**
+#### 3.1 The Batch Loop
 
 ```
-repos = [repo1, repo2, ..., repoN]  # All repositories
-BATCH_SIZE = 5                       # Max 5 per batch
-
-for batch_start in range(0, len(repos), BATCH_SIZE):
-    batch = repos[batch_start : batch_start + BATCH_SIZE]
-
-    # Step A: Fork subagents for this batch in a single turn
-    for repo in batch:
-        Agent(subagent_type="project-analyzer", ..., run_in_background=true)
-
-    # Step B: [CRITICAL] Must wait for ALL subagents in this batch to complete
-    # Use TaskOutput to block and wait for each subagent
-    for each agent_task_id in batch:
-        TaskOutput(task_id=agent_task_id, block=true, timeout=600000)
-
-    # Step C: Only after this batch fully completes, proceed to next batch
+┌─────────────────────────────────────────────────────────────────────┐
+│  LOOP: repeat until `next` exits with code 2                        │
+│                                                                     │
+│  ① batch_manager.py next --session {id}                             │
+│     → Returns JSON: { batch_num, total_batches, batch_size, repos } │
+│     → Exit code 2 = no more batches → stop loop                    │
+│                                                                     │
+│  ② Fork ALL repos in this batch as background subagents             │
+│     (use repo.local_path from the plan — already resolved by plan)  │
+│                                                                     │
+│  ③ Block until ALL subagents in this batch complete                 │
+│     (background_output for each task_id)                            │
+│                                                                     │
+│  ④ For each result:                                                  │
+│     Success → batch_manager.py complete --session {id} --repo {name}│
+│     Failure → batch_manager.py fail --session {id} --repo {name}   │
+│                                --error "msg"                        │
+│                                                                     │
+│  ⑤ Mark current batch todo as completed                             │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**⚠️ Strict Execution Requirements:**
-1. **DO NOT fork more than 5 subagents in a single turn**
-2. **Each batch MUST use TaskOutput with block=true to wait for completion** - not just fire-and-forget
-3. **Only after current batch fully completes** can the next batch be started in a new turn
+#### 3.2 Pseudocode
 
-**For each batch, use Agent tool to fork subagents:**
+```
+SESSION_ID = {YOUR_SESSION_ID}
+BM = "python3 ~/.claude/skills/scv/scripts/batch_manager.py"
+
+while True:
+    result = Bash(f"{BM} next --session {SESSION_ID}")
+    if result.exit_code == 2:
+        break
+
+    batch = parse_json(result.stdout)
+    batch_num = batch["batch_num"]
+    total_batches = batch["total_batches"]
+    repos = batch["repos"]          # local_path already resolved
+    output_dir = batch["output_dir"]
+
+    print(f"🔄 Batch {batch_num}/{total_batches} ({len(repos)} repos)")
+    TodoWrite - mark "Batch {batch_num}/{total_batches}" as in_progress
+
+    # Fork all subagents simultaneously
+    task_ids = {}
+    for repo in repos:
+        task_id = Agent(
+            subagent_type="project-analyzer",
+            description=f"Analyze {repo['project_name']}",
+            prompt=build_prompt(repo, output_dir),
+            run_in_background=True
+        )
+        task_ids[repo["project_name"]] = task_id
+
+    # Collect all results before proceeding
+    for repo_name, task_id in task_ids.items():
+        output = background_output(task_id=task_id, block=True, timeout=600000)
+        if output.success:
+            Bash(f"{BM} complete --session {SESSION_ID} --repo '{repo_name}'")
+        else:
+            Bash(f"{BM} fail --session {SESSION_ID} --repo '{repo_name}' --error '{output.error}'")
+
+    TodoWrite - mark "Batch {batch_num}/{total_batches}" as completed
+
+print("✅ All batches complete")
+```
+
+#### 3.3 Subagent Call Template
 
 ```
 Agent(
   subagent_type="project-analyzer",
-  description="Analyze {project_name}",
+  description="Analyze {repo['project_name']}",
   prompt="""
   Analyze the codebase and generate documentation.
 
   Input Parameters:
-  - Project Path: {analysis_path}
-  - Output Directory: {output_dir}/{repo_name}/
-  - Project Name: {project_name}
+  - Project Path: {repo['local_path']}
+  - Output Directory: {output_dir}/{repo['repo_name']}/
+  - Project Name: {repo['project_name']}
+  - Current Commit: {repo.get('current_commit', 'N/A')}
   - Templates Directory: {skill_path}/references/templates/
 
   Execute the 3-phase analysis workflow:
@@ -196,109 +244,96 @@ Agent(
 
   Follow the templates strictly and mark uncertain items with [To be confirmed].
   """,
-  run_in_background=true
+  run_in_background=True
 )
 ```
 
-**When each subagent completes, update the task list:**
+> **Note:** `repo['current_commit']` is populated by `batch_manager.py plan` and stored in the session state. It is `None` for non-Git local directories.
+
+#### 3.4 Sequential Mode (`parallel: false`)
+
+- Still call `next` to get each batch
+- Fork one subagent at a time, block before proceeding to the next
+- Suitable for debugging or resource-constrained scenarios
+
+#### 3.5 Crash Recovery
+
+```bash
+# See what's still in-progress or pending
+python3 ~/.claude/skills/scv/scripts/batch_manager.py resume --session {SESSION_ID}
+
+# Call next again — returns the interrupted batch (idempotent)
+python3 ~/.claude/skills/scv/scripts/batch_manager.py next --session {SESSION_ID}
+```
+
+`next` is **idempotent**: if a batch is already `in_progress`, it returns that same batch instead of skipping forward.
+
+### Step 4: Track Progress
 
 ```
-TodoWrite - mark the corresponding task as completed
-```
-
-**When `parallel = false`, execute sequentially:**
-
-Process repositories one by one, waiting for each to complete before starting the next.
-
-### Step 6: Track Progress
-
-**In parallel mode**, receive notification when each subagent completes and update task status:
-
-```
-✅ [1/3] {project_name} complete
-   Type: remote
-   📁 Local: ~/.scv/repos/{repo_name}
+✅ [1/N] {project_name} complete
+   📁 Path: {local_path}
    📂 Output: ~/.scv/analysis/{repo_name}/
-   📄 4 documents generated
-   🌿 Branch: {branch}
-
-✅ [2/3] {project_name} complete
-   Type: local
-   📁 Path: {path}
-   📂 Output: ~/.scv/analysis/{repo_name}/
+   📦 Commit: {short_commit_hash} - {commit_message}
    📄 4 documents generated
 
-❌ [3/3] {project_name} failed - Analysis failed
-   Type: {remote/local}
-   📁 Path: {actual_path}
+⏭️ [2/N] {project_name} skipped (commit unchanged)
+   📦 Commit: {short_commit_hash} (same as last analysis)
+   💡 Docs already up-to-date
+
+❌ [3/N] {project_name} failed
    🚫 Error: {error_message}
 ```
 
-### Step 7: Generate Batch Summary
-
-After all analyses complete (or stop if `fail_fast = true`), verify all tasks in TodoWrite are completed:
+### Step 5: Generate Batch Summary
 
 ```
-╔════════════════════════════════════════════════════════════╗
-║         Batch Analysis Complete                            ║
-╚════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════╗
+║         Batch Analysis Complete                   ║
+╚═══════════════════════════════════════════════════╝
 
-Config file: ~/.scv/config.json
-Output directory: ~/.scv/analysis
-Execution mode: {sequential/parallel}
-Duration: {X minutes Y seconds}
+Config: ~/.scv/config.json
+Output: ~/.scv/analysis/
+Batch size: {batch_size}
+Mode: {parallel/sequential}
 
 Results:
   ✅ Success: {N}/{total}
-  ❌ Failed: {N}/{total}
-  ⏭️ Skipped: {N}/{total}
+  ❌ Failed:  {N}/{total}
+  ⏭️ Skipped (unchanged): {N}/{total}
 
-  Remote repositories: {N} analyzed
-  Local repositories: {N} analyzed
-
-Successful repositories:
+Successful:
   1. [remote] {project_name} → ~/.scv/analysis/{repo_name}/
-  2. [local] {project_name} → ~/.scv/analysis/{repo_name}/
-  ...
+  2. [local]  {project_name} → ~/.scv/analysis/{repo_name}/
 
-Failed repositories:
-  1. [remote] {project_name} → {error}
-  2. [local] {project_name} → {error}
-  ...
+Skipped (commit unchanged):
+  1. {project_name} → last analyzed at {last_analyzed_at}
 
-Output locations:
-  All analyses saved to: ~/.scv/analysis/
-  Remote repos cloned to: ~/.scv/repos/
+Failed:
+  1. {project_name} → {error}
 ```
 
-### Step 8: Suggest Next Steps
+### Step 6: Suggest Next Steps
 
 ```
-What's next?
-
-  📖 Browse documentation
-     - Open ~/.scv/analysis/ to view generated documents
-
-  🔍 Analyze single repository
-     - Use /scv run <repo_path> for targeted analysis
-
-  🌐 Collect remote repositories
-     - Use /scv gather --batch to clone/pull all remote repos
-
-  🔄 Re-run batch analysis
-     - Use /scv batchRun to regenerate all documents (auto-pulls remote repos)
-
-  📋 List all repositories
-     - Use /scv gather --list to view cloned remote repos
+📖 Browse docs:    open ~/.scv/analysis/
+🔍 Single repo:    /scv run <repo_path>
+🔄 Re-run:         /scv batchRun
+📋 List repos:     /scv gather --list
 ```
 
-## Configuration File Schema
+---
+
+## Configuration Reference
 
 ### ~/.scv/config.json
 
 ```json
 {
   "output_dir": "~/.scv/analysis",
+  "batch_size": 5,
+  "parallel": true,
+  "fail_fast": false,
   "repos": [
     {
       "type": "remote",
@@ -311,60 +346,26 @@ What's next?
       "path": "~/local/path/to/repo",
       "project_name": "Local Project"
     }
-  ],
-  "parallel": true,
-  "fail_fast": false
+  ]
 }
 ```
-
-### Field Descriptions
 
 | Field | Required | Description | Default |
 |-------|----------|-------------|---------|
 | `output_dir` | No | Output directory for all analyses | `~/.scv/analysis` |
-| `parallel` | No | Execute in parallel | `true` |
-| `fail_fast` | No | Stop on error | `false` |
+| `batch_size` | No | Max concurrent subagents per batch | `5` |
+| `parallel` | No | Parallel within batch (false = sequential) | `true` |
+| `fail_fast` | No | Stop all on first failure | `false` |
 
-**Remote repository fields:**
-- `type`: `"remote"` (required)
-- `url`: Git repository URL (required)
-- `project_name`: Project name (optional)
-- `branch`: Branch (optional)
+---
 
-**Local repository fields:**
-- `type`: `"local"` (required)
-- `path`: Local path (required, supports `~`)
-- `project_name`: Project name (optional)
+## Execution Requirement Summary
 
-## Error Handling
-
-| Error | Handling |
-|-------|----------|
-| Config file not found | Show example config, exit |
-| Invalid repository type | Report error, skip repository |
-| Git pull failed | Report error, decide based on `fail_fast` |
-| Local path not found | Report error, skip repository |
-| Analysis failed | Log error, continue with other repositories |
-
-## Subagent Strategy Details
-
-### Why Use Subagents?
-
-1. **Context Isolation**: Each repository analysis in isolated context, avoids token accumulation
-2. **True Parallelism**: Multiple subagents run simultaneously, significantly reduces total time
-3. **Fault Tolerance**: Single analysis failure doesn't affect others
-4. **Trackability**: Receive notification when each subagent completes
-
-### Subagent Type Selection
-
-Using `project-analyzer` subagent type - a specialized agent with:
-- **Tools**: Read, Write, Glob, Grep, LSP (optimized for code analysis)
-- **Focus**: Single-purpose deep code analysis
-- **Output**: Structured documentation following templates
-
-## Best Practices
-
-1. **First run**: Run `/scv gather --batch` first to clone all remote repos
-2. **Regular updates**: `batchRun` auto-pulls, but can manually `--update-all`
-3. **Check config**: Periodically view `~/.scv/gather --list` to confirm repo status
-4. **Parallel settings**: Adjust `parallel` and repo count based on machine performance
+| Requirement | Rule | Violation Consequence |
+|-------------|------|-----------------------|
+| Call `plan` first | Always, before any `next` | Stale/missing state |
+| Never parse config yourself | `plan` owns config reading | Wrong batch splits |
+| Never run git yourself | `plan` owns git ops | Diverged local state |
+| Always call `next` for batches | Never compute from memory | Wrong repos, silent skips |
+| Collect ALL results before next batch | Serial between batches | Out-of-order state |
+| Call `complete` or `fail` for every repo | No exceptions | State diverges from reality |
