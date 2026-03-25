@@ -229,6 +229,7 @@ open ~/.scv/analysis/project/README.md
 {
   "output_dir": "~/.scv/analysis",
   "batch_size": 5,
+  "deep_analysis_enabled": false,
   "repos": [
     {
       "type": "remote",
@@ -259,8 +260,16 @@ open ~/.scv/analysis/project/README.md
 |------|------|------|--------|
 | `output_dir` | 否 | 所有分析的输出目录 | `~/.scv/analysis` |
 | `batch_size` | 否 | batchRun 每批最大并发 subagent 数 | `5` |
+| `deep_analysis_enabled` | 否 | 启用深度分析模式（集成 [codebones](https://github.com/creynir/codebones)） | `false` |
 | `parallel` | 否 | 批内并行执行 | `true` |
 | `fail_fast` | 否 | 遇到错误停止 | `false` |
+
+> **深度分析模式**：当 `deep_analysis_enabled` 为 `true` 时，SCV 使用 [codebones](https://github.com/creynir/codebones) 实现：
+> - 生成压缩的骨架概览（85% token 压缩）
+> - 按需获取特定符号的完整实现（`codebones get`）
+> - 追踪代码库中的依赖关系（`codebones search`）
+>
+> 需要先安装 codebones：`pip install codebones` 或 `cargo install codebones`
 
 **远程仓库字段：**
 - `type`: `"remote"` (必需)

@@ -231,6 +231,7 @@ Location: `~/.scv/config.json`
 {
   "output_dir": "~/.scv/analysis",
   "batch_size": 5,
+  "deep_analysis_enabled": false,
   "repos": [
     {
       "type": "remote",
@@ -261,8 +262,16 @@ Location: `~/.scv/config.json`
 |-------|----------|-------------|---------|
 | `output_dir` | No | Output directory for analyses | `~/.scv/analysis` |
 | `batch_size` | No | Max concurrent subagents per batch for batchRun | `5` |
+| `deep_analysis_enabled` | No | Enable deep analysis mode with [codebones](https://github.com/creynir/codebones) | `false` |
 | `parallel` | No | Parallel execution within a batch | `true` |
 | `fail_fast` | No | Stop on first error | `false` |
+
+> **Deep Analysis Mode**: When `deep_analysis_enabled` is `true`, SCV uses [codebones](https://github.com/creynir/codebones) to:
+> - Generate compressed skeleton overview (85% token reduction)
+> - Fetch specific symbol implementations on-demand (`codebones get`)
+> - Trace dependencies across the codebase (`codebones search`)
+>
+> Requires codebones installed: `pip install codebones` or `cargo install codebones`
 
 **Remote Repository:**
 - `type`: `"remote"` (required)
