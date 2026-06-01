@@ -1,6 +1,6 @@
 # SCV - Source Code Vault
 
-> 专为 Claude Code 设计的强大代码库管理和分析工具
+> 面向 Codex 和 Claude Code 的强大代码库管理和分析工具
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-SCV-blue.svg)](https://github.com/ProjAnvil/SCV)
 
@@ -45,7 +45,7 @@
 
 ### 前置要求
 
-- **Claude Code CLI** - [安装指南](https://github.com/anthropics/claude-code)
+- **Codex 或 Claude Code CLI**
 - **codebones**（可选，用于深度分析）- Token 高效的代码探索工具
   > codebones 可在深度分析时实现 85% token 压缩。未安装时，深度分析将回退到标准文件读取。
 
@@ -54,11 +54,17 @@
 运行安装脚本：
 
 ```bash
-# 默认（英文）
+# 默认：安装英文 skill 到 Claude Code
 ./install.sh
 
-# 中文版本
+# 安装中文版本到 Claude Code
 ./install.sh --lang=zh-cn
+
+# 安装到 Codex
+./install.sh --target=codex
+
+# 同时安装到 Codex 和 Claude Code
+./install.sh --target=all --lang=zh-cn
 
 # 查看帮助
 ./install.sh --help
@@ -67,8 +73,9 @@
 该脚本将：
 - 创建 `~/.scv` 配置目录
 - 复制配置文件
-- 安装所选语言的 skill 到 `~/.claude/skills/scv`
-- 安装 `project-analyzer` agent 到 `~/.claude/agents/`
+- 安装共享辅助脚本到 `~/.scv/scripts`
+- 默认将所选语言的 skill 安装到 `~/.claude/skills/scv` 和 `~/.claude/agents/`
+- 使用 `--target=codex` 时安装到 Codex 的 `~/.agents/skills/scv`
 
 ### 安装 codebones（可选，用于深度分析）
 
@@ -95,11 +102,13 @@ codebones --version
 ├── config.json      # 仓库配置
 ├── repos/           # 克隆的远程仓库
 ├── analysis/        # 生成的文档
-└── sessions/        # batchRun 会话状态（崩溃恢复用）
+├── sessions/        # batchRun 会话状态（崩溃恢复用）
+└── scripts/         # Python 辅助脚本（scv_util、batch_manager、git_op）
 
-~/.claude/skills/scv/
+~/.agents/skills/scv/        # Codex 默认安装位置
 ├── SKILL.md         # Skill 入口
-├── scripts/         # Python 辅助脚本（scv_util、batch_manager、git_op）
+├── project-analyzer.md # 分析 Prompt
+├── scripts/         # 辅助脚本链接
 └── references/
     ├── run.md
     ├── batchRun.md
@@ -110,8 +119,9 @@ codebones --version
         ├── ARCHITECTURE.template.md
         └── FILE_INDEX.template.md
 
-~/.claude/agents/
-└── project-analyzer.md   # 分析专用 subagent
+~/.claude/                # 默认安装目标，使用 --target=all 时也会安装
+├── skills/scv/
+└── agents/project-analyzer.md
 ```
 
 ## 快速开始

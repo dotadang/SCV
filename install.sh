@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SCV Installation Script - Installs SCV (Source Code Vault) for Claude Code
+# SCV Installation Script - Installs SCV (Source Code Vault) for Codex or Claude Code
 # Supports Windows (Git Bash, MSYS2, Cygwin), macOS, and Linux
 
 set -e
@@ -12,7 +12,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Detect OS
 detect_os() {
     if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
         echo "windows"
@@ -23,12 +22,27 @@ detect_os() {
     fi
 }
 
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --lang=LANG, --lang LANG        Set language (en or zh-cn, default: en)"
+    echo "  --target=TARGET, --target TARGET"
+    echo "                                  Install target: codex, claude, or all (default: claude)"
+    echo "  --platform=TARGET               Alias for --target"
+    echo "  -h, --help                      Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0                              # Install English skill for Claude Code"
+    echo "  $0 --lang=zh-cn                 # Install Chinese skill for Claude Code"
+    echo "  $0 --target=codex               # Install for Codex"
+    echo "  $0 --target=all --lang=zh-cn    # Install Chinese skill for both"
+}
+
 OS_TYPE=$(detect_os)
-
-# Default language
 SKILL_LANG="en"
+INSTALL_TARGET="claude"
 
-# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --lang=*)
@@ -39,17 +53,24 @@ while [[ $# -gt 0 ]]; do
             SKILL_LANG="$2"
             shift 2
             ;;
+        --target=*)
+            INSTALL_TARGET="${1#*=}"
+            shift
+            ;;
+        --target)
+            INSTALL_TARGET="$2"
+            shift 2
+            ;;
+        --platform=*)
+            INSTALL_TARGET="${1#*=}"
+            shift
+            ;;
+        --platform)
+            INSTALL_TARGET="$2"
+            shift 2
+            ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --lang=LANG, --lang LANG    Set language (en or zh-cn, default: en)"
-            echo "  -h, --help                  Show this help message"
-            echo ""
-            echo "Examples:"
-            echo "  $0                  # Use default language (en)"
-            echo "  $0 --lang=zh-cn     # Use Chinese"
-            echo "  $0 --lang en        # Use English"
+            usage
             exit 0
             ;;
         *)
@@ -60,14 +81,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate language code
 if [[ "$SKILL_LANG" != "en" && "$SKILL_LANG" != "zh-cn" ]]; then
     echo -e "${RED}Error: Unsupported language '$SKILL_LANG'${NC}"
     echo "Supported languages: en, zh-cn"
     exit 1
 fi
 
-# Get the absolute path of this script's directory
+if [[ "$INSTALL_TARGET" != "codex" && "$INSTALL_TARGET" != "claude" && "$INSTALL_TARGET" != "all" ]]; then
+    echo -e "${RED}Error: Unsupported target '$INSTALL_TARGET'${NC}"
+    echo "Supported targets: codex, claude, all"
+    exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ ! -f "$SCRIPT_DIR/config.example.json" ]; then
@@ -75,17 +100,20 @@ if [ ! -f "$SCRIPT_DIR/config.example.json" ]; then
     exit 1
 fi
 
-# Source directories
 SCV_SKILL_SRC="$SCRIPT_DIR/skills/$SKILL_LANG"
 SCV_SCRIPTS_SRC="$SCRIPT_DIR/skills/scripts"
 SCV_AGENT_SRC="$SCRIPT_DIR/agents/$SKILL_LANG/project-analyzer.md"
 
-# Target directories
+SCV_DATA_DIR="$HOME/.scv"
+SCV_SCRIPTS_DATA_DIR="$SCV_DATA_DIR/scripts"
+
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SKILLS_DIR="$CLAUDE_DIR/skills"
 CLAUDE_AGENTS_DIR="$CLAUDE_DIR/agents"
-SKILL_TARGET_DIR="$CLAUDE_SKILLS_DIR/scv"
-SCV_DATA_DIR="$HOME/.scv"
+CLAUDE_SKILL_TARGET_DIR="$CLAUDE_SKILLS_DIR/scv"
+
+CODEX_SKILLS_DIR="${CODEX_SKILLS_DIR:-$HOME/.agents/skills}"
+CODEX_SKILL_TARGET_DIR="$CODEX_SKILLS_DIR/scv"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  SCV (Source Code Vault) Setup${NC}"
@@ -93,40 +121,35 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "${GREEN}OS Detected:${NC} $OS_TYPE"
 echo -e "${GREEN}Language:${NC} $SKILL_LANG"
+echo -e "${GREEN}Target:${NC} $INSTALL_TARGET"
 echo -e "${GREEN}Source:${NC}"
 echo "  Skill: $SCV_SKILL_SRC"
 echo "  Scripts: $SCV_SCRIPTS_SRC"
-echo "  Agent: $SCV_AGENT_SRC"
-echo -e "${GREEN}Target:${NC}"
-echo "  Skill: $SKILL_TARGET_DIR"
-echo "  Agent: $CLAUDE_AGENTS_DIR/project-analyzer.md"
-echo "  Data: $SCV_DATA_DIR"
+echo "  Analyzer: $SCV_AGENT_SRC"
+echo -e "${GREEN}Data:${NC} $SCV_DATA_DIR"
 echo ""
 
-# Windows-specific warnings
 if [ "$OS_TYPE" = "windows" ]; then
-    echo -e "${YELLOW}⚠ Windows Detected${NC}"
+    echo -e "${YELLOW}Windows Detected${NC}"
     echo -e "${YELLOW}Note: On Windows, files will be copied instead of linked.${NC}"
     echo -e "${YELLOW}You'll need to re-run this script after making changes to skills.${NC}"
     echo ""
 fi
 
-# Validate source directories
 if [ ! -d "$SCV_SKILL_SRC" ]; then
     echo -e "${RED}Error: Skill not found: $SCV_SKILL_SRC${NC}"
     echo "Available languages:"
-    ls -d "$SCRIPT_DIR/skills/"*/ 2>/dev/null | xargs -n 1 basename | grep -v scripts
+    find "$SCRIPT_DIR/skills" -mindepth 1 -maxdepth 1 -type d -not -name scripts -exec basename {} \;
     exit 1
 fi
 
 if [ ! -f "$SCV_AGENT_SRC" ]; then
-    echo -e "${RED}Error: Agent not found: $SCV_AGENT_SRC${NC}"
+    echo -e "${RED}Error: Analyzer prompt not found: $SCV_AGENT_SRC${NC}"
     echo "Available languages:"
-    ls -d "$SCRIPT_DIR/agents/"*/ 2>/dev/null | xargs -n 1 basename
+    find "$SCRIPT_DIR/agents" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
     exit 1
 fi
 
-# Function to create directory if it doesn't exist
 create_dir() {
     local dir=$1
     if [ ! -d "$dir" ]; then
@@ -137,153 +160,162 @@ create_dir() {
     fi
 }
 
-# Function to create symlink (Unix/Mac) or copy (Windows)
-create_symlink() {
+link_or_copy() {
     local source=$1
     local target=$2
     local name=$3
 
     if [ "$OS_TYPE" = "windows" ]; then
-        # Windows: always remove and re-copy to ensure latest version
         if [ -e "$target" ]; then
-            echo -e "${YELLOW}⟳${NC} $name (updating)"
+            echo -e "${YELLOW}Updating:${NC} $name"
             rm -rf "$target"
         else
-            echo -e "${GREEN}+${NC} $name (copying)"
+            echo -e "${GREEN}Installing:${NC} $name"
         fi
         if [ -d "$source" ]; then
             cp -r "$source" "$target"
         else
             cp "$source" "$target"
         fi
-        echo -e "${GREEN}  Copied${NC}"
-    else
-        # Unix/Mac: use symbolic links
-        if [ -L "$target" ]; then
-            local current_target
-            current_target=$(readlink "$target")
-            if [ "$current_target" = "$source" ]; then
-                echo -e "${GREEN}✓${NC} $name (already linked)"
-            else
-                echo -e "${YELLOW}⟳${NC} $name (updating link)"
-                rm "$target"
-                ln -s "$source" "$target"
-            fi
-        elif [ -e "$target" ]; then
-            echo -e "${RED}✗${NC} $name (conflict: $target exists and is not a symlink)"
-            echo -e "${YELLOW}  Please manually remove or backup:${NC} $target"
-            return 1
+        return
+    fi
+
+    if [ -L "$target" ]; then
+        local current_target
+        current_target=$(readlink "$target")
+        if [ "$current_target" = "$source" ]; then
+            echo -e "${GREEN}Already linked:${NC} $name"
         else
-            echo -e "${GREEN}+${NC} $name (creating link)"
+            echo -e "${YELLOW}Updating link:${NC} $name"
+            rm "$target"
             ln -s "$source" "$target"
         fi
+    elif [ -e "$target" ]; then
+        echo -e "${RED}Conflict:${NC} $target exists and is not a symlink"
+        echo -e "${YELLOW}Please manually remove or backup:${NC} $target"
+        return 1
+    else
+        echo -e "${GREEN}Linking:${NC} $name"
+        ln -s "$source" "$target"
     fi
 }
 
-# Step 1: Create SCV data directory
+install_skill_files() {
+    local target_dir=$1
+    local label=$2
+
+    create_dir "$target_dir"
+
+    shopt -s nullglob
+    local skill_files=("$SCV_SKILL_SRC"/*)
+    shopt -u nullglob
+
+    for skill_file in "${skill_files[@]}"; do
+        local file_name
+        file_name=$(basename "$skill_file")
+        link_or_copy "$skill_file" "$target_dir/$file_name" "$label/$file_name"
+    done
+
+    if [ -d "$SCV_SCRIPTS_SRC" ]; then
+        link_or_copy "$SCV_SCRIPTS_SRC" "$target_dir/scripts" "$label/scripts"
+    else
+        echo -e "${YELLOW}No scripts directory found, skipping${NC}"
+    fi
+}
+
+install_codex() {
+    echo -e "\n${BLUE}Installing Codex skill${NC}"
+    create_dir "$CODEX_SKILLS_DIR"
+    install_skill_files "$CODEX_SKILL_TARGET_DIR" "codex scv"
+    link_or_copy "$SCV_AGENT_SRC" "$CODEX_SKILL_TARGET_DIR/project-analyzer.md" "codex scv/project-analyzer.md"
+}
+
+install_claude() {
+    echo -e "\n${BLUE}Installing Claude Code skill and agent${NC}"
+    create_dir "$CLAUDE_DIR"
+    create_dir "$CLAUDE_SKILLS_DIR"
+    create_dir "$CLAUDE_AGENTS_DIR"
+    install_skill_files "$CLAUDE_SKILL_TARGET_DIR" "claude scv"
+    link_or_copy "$SCV_AGENT_SRC" "$CLAUDE_AGENTS_DIR/project-analyzer.md" "claude project-analyzer.md"
+}
+
 echo -e "\n${BLUE}Step 1: Creating SCV data directory${NC}"
 create_dir "$SCV_DATA_DIR"
 create_dir "$SCV_DATA_DIR/repos"
 create_dir "$SCV_DATA_DIR/analysis"
 create_dir "$SCV_DATA_DIR/sessions"
 
-# Copy config if not exists
 if [ -f "$SCV_DATA_DIR/config.json" ]; then
     echo -e "${GREEN}config.json already exists, skipping${NC}"
 else
     cp "$SCRIPT_DIR/config.example.json" "$SCV_DATA_DIR/config.json"
-    echo -e "${GREEN}+${NC} config.json (copied)"
-fi
-else
-    cp "$SCRIPT_DIR/config.example.json" "$SCV_DATA_DIR/config.json"
-    echo -e "${GREEN}+${NC} config.json (copied)"
+    echo -e "${GREEN}Installed:${NC} config.json"
 fi
 
-# Step 2: Create Claude directories
-echo -e "\n${BLUE}Step 2: Creating Claude directories${NC}"
-create_dir "$CLAUDE_DIR"
-create_dir "$CLAUDE_SKILLS_DIR"
-create_dir "$CLAUDE_AGENTS_DIR"
-
-# Step 3: Install scv skill
-echo -e "\n${BLUE}Step 3: Installing scv skill ($SKILL_LANG)${NC}"
-
-# Remove old skill structure if exists
-if [ -d "$SKILL_TARGET_DIR" ] && [ ! -L "$SKILL_TARGET_DIR" ]; then
-    echo -e "${YELLOW}⟳ Removing old skill directory...${NC}"
-    rm -rf "$SKILL_TARGET_DIR"
-fi
-
-# Link/copy skill content file by file (to allow scripts to coexist)
-create_dir "$SKILL_TARGET_DIR"
-
-shopt -s nullglob
-skill_files=("$SCV_SKILL_SRC"/*)
-shopt -u nullglob
-
-for skill_file in "${skill_files[@]}"; do
-    file_name=$(basename "$skill_file")
-    create_symlink "$skill_file" "$SKILL_TARGET_DIR/$file_name" "scv/$file_name"
-done
-
-# Step 4: Install shared scripts
-echo -e "\n${BLUE}Step 4: Installing shared scripts${NC}"
 if [ -d "$SCV_SCRIPTS_SRC" ]; then
-    create_symlink "$SCV_SCRIPTS_SRC" "$SKILL_TARGET_DIR/scripts" "scv/scripts"
-else
-    echo -e "${YELLOW}No scripts directory found, skipping${NC}"
+    link_or_copy "$SCV_SCRIPTS_SRC" "$SCV_SCRIPTS_DATA_DIR" "shared scripts (~/.scv/scripts)"
 fi
 
-# Step 5: Install project-analyzer agent
-echo -e "\n${BLUE}Step 5: Installing project-analyzer agent ($SKILL_LANG)${NC}"
-create_symlink "$SCV_AGENT_SRC" "$CLAUDE_AGENTS_DIR/project-analyzer.md" "project-analyzer.md"
+case "$INSTALL_TARGET" in
+    codex)
+        install_codex
+        ;;
+    claude)
+        install_claude
+        ;;
+    all)
+        install_codex
+        install_claude
+        ;;
+esac
 
-# Step 6: Verification
-echo -e "\n${BLUE}Step 6: Verification${NC}"
+echo -e "\n${BLUE}Verification${NC}"
 
-echo -e "\n${YELLOW}scv skill (~/.claude/skills/scv/):${NC}"
-if [ -d "$SKILL_TARGET_DIR" ]; then
-    ls -lh "$SKILL_TARGET_DIR" | tail -n +2 | awk '{print "  " $NF}'
-else
-    echo -e "${RED}  skill directory not found${NC}"
+if [[ "$INSTALL_TARGET" == "codex" || "$INSTALL_TARGET" == "all" ]]; then
+    echo -e "\n${YELLOW}Codex skill:${NC} $CODEX_SKILL_TARGET_DIR"
+    if [ -d "$CODEX_SKILL_TARGET_DIR" ]; then
+        find "$CODEX_SKILL_TARGET_DIR" -maxdepth 1 -mindepth 1 -exec basename {} \; | sort | sed 's/^/  /'
+    else
+        echo -e "${RED}  skill directory not found${NC}"
+    fi
 fi
 
-echo -e "\n${YELLOW}project-analyzer agent:${NC}"
-if [ -L "$CLAUDE_AGENTS_DIR/project-analyzer.md" ]; then
-    echo -e "${GREEN}  ✓ linked${NC}"
-    ls -lh "$CLAUDE_AGENTS_DIR/project-analyzer.md" | awk '{print "  " $9 " -> " $11}'
-elif [ -f "$CLAUDE_AGENTS_DIR/project-analyzer.md" ]; then
-    echo -e "${GREEN}  ✓ installed (Windows copy)${NC}"
-else
-    echo -e "${RED}  ✗ not installed${NC}"
+if [[ "$INSTALL_TARGET" == "claude" || "$INSTALL_TARGET" == "all" ]]; then
+    echo -e "\n${YELLOW}Claude Code skill:${NC} $CLAUDE_SKILL_TARGET_DIR"
+    if [ -d "$CLAUDE_SKILL_TARGET_DIR" ]; then
+        find "$CLAUDE_SKILL_TARGET_DIR" -maxdepth 1 -mindepth 1 -exec basename {} \; | sort | sed 's/^/  /'
+    else
+        echo -e "${RED}  skill directory not found${NC}"
+    fi
+
+    echo -e "\n${YELLOW}Claude Code analyzer agent:${NC}"
+    if [ -e "$CLAUDE_AGENTS_DIR/project-analyzer.md" ]; then
+        echo -e "${GREEN}  installed${NC} $CLAUDE_AGENTS_DIR/project-analyzer.md"
+    else
+        echo -e "${RED}  not installed${NC}"
+    fi
 fi
 
-# Step 7: Summary
 echo -e "\n${BLUE}========================================${NC}"
 echo -e "${GREEN}SCV installation complete!${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Language: $SKILL_LANG"
+echo "  Target: $INSTALL_TARGET"
 echo "  Data directory: $SCV_DATA_DIR"
-echo "  Skill: $SKILL_TARGET_DIR"
-echo "  Agent: $CLAUDE_AGENTS_DIR/project-analyzer.md"
-echo ""
-echo -e "${GREEN}You can now use SCV commands in Claude Code:${NC}"
-echo "  /scv run <path|url>  - Analyze a single repository"
-echo "  /scv batchRun        - Batch analyze multiple repositories (parallel)"
-echo "  /scv gather <opts>   - Clone and manage repositories"
-echo ""
-if [ "$OS_TYPE" = "windows" ]; then
-    echo -e "${YELLOW}Windows Notes:${NC}"
-    echo "  - Files are copied, not linked"
-    echo "  - Re-run this script after updating skills"
-    echo "  - To remove: rm -rf $SCV_DATA_DIR $SKILL_TARGET_DIR $CLAUDE_AGENTS_DIR/project-analyzer.md"
-else
-    echo -e "${GREEN}Notes:${NC}"
-    echo "  - Changes to skills/agents in this project are immediately reflected"
-    echo "  - To switch language, run: $0 --lang=<en|zh-cn>"
-    echo "  - To remove: rm -rf $SCV_DATA_DIR $SKILL_TARGET_DIR $CLAUDE_AGENTS_DIR/project-analyzer.md"
+echo "  Shared scripts: $SCV_SCRIPTS_DATA_DIR"
+if [[ "$INSTALL_TARGET" == "codex" || "$INSTALL_TARGET" == "all" ]]; then
+    echo "  Codex skill: $CODEX_SKILL_TARGET_DIR"
 fi
+if [[ "$INSTALL_TARGET" == "claude" || "$INSTALL_TARGET" == "all" ]]; then
+    echo "  Claude skill: $CLAUDE_SKILL_TARGET_DIR"
+    echo "  Claude agent: $CLAUDE_AGENTS_DIR/project-analyzer.md"
+fi
+echo ""
+echo -e "${GREEN}Use SCV by asking your agent:${NC}"
+echo "  /scv run <path|url>     - Analyze a single repository"
+echo "  /scv batchRun           - Batch analyze configured repositories"
+echo "  /scv gather <options>   - Clone and manage repositories"
 echo ""
 echo -e "${GREEN}For more information, see README.md${NC}"

@@ -21,6 +21,13 @@ description: |
 
 Deep code repository analysis tool that generates structured project documentation.
 
+## Runtime Notes
+
+- In Codex, this skill is installed under `~/.agents/skills/scv` by default. The analyzer prompt is bundled as `project-analyzer.md` in this skill directory.
+- In Claude Code, the analyzer prompt may also be installed as `~/.claude/agents/project-analyzer.md`.
+- Helper scripts are installed to `~/.scv/scripts`; use that stable path in shell commands.
+- If a subagent tool is unavailable, perform `run` locally in the current agent. For `batchRun`, process repositories in batches using `~/.scv/scripts/batch_manager.py` and use available agent delegation only when the runtime permits it.
+
 ## Command Parsing
 
 Parse the first argument as subcommand:
@@ -52,7 +59,7 @@ All analysis uses these resources (located within this skill):
 
 | Resource | Path | Description |
 |----------|------|-------------|
-| Analysis Prompt | `references/project-analyzer.md` | Core analysis logic |
+| Analysis Prompt | `project-analyzer.md` | Core analysis logic |
 | Templates | `references/templates/*.md` | Document generation templates |
 | Config File | `~/.scv/config.json` | Repository list and settings |
 | Repo Storage | `~/.scv/repos/` | Cloned remote repositories |

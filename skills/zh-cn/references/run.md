@@ -1,6 +1,13 @@
 # scv run - 单仓库深度分析
 
-通过启动专用的 `project-analyzer` subagent 分析单个代码仓库。
+分析单个代码仓库。优先使用专用的 `project-analyzer` 分析 Prompt；如果运行环境支持 subagent，可委派给 subagent，否则在当前 agent 内按相同 Prompt 执行。
+
+## Codex 兼容说明
+
+- 分析 Prompt 位于当前 skill 目录的 `project-analyzer.md`。
+- 辅助脚本位于 `~/.scv/scripts`。
+- Codex 中没有 `/scv` 原生命令时，将用户的 `/scv run ...` 视为触发本 reference 的自然语言指令。
+- 如果当前环境不允许启动 subagent，直接读取 `project-analyzer.md` 并在当前 agent 中完成分析与文档写入。
 
 ## 用法
 
@@ -95,7 +102,7 @@ mkdir -p ~/.scv/analysis
 5. **获取 commit 信息**（仅 Git 仓库）：
 
    ```bash
-   python3 ~/.claude/skills/scv/scripts/scv_util.py get-commit-info \
+   python3 ~/.scv/scripts/scv_util.py get-commit-info \
      --repo {analysis_path}
    ```
 
@@ -168,9 +175,9 @@ cat ~/.scv/config.json 2>/dev/null | grep -q '"deep_analysis_enabled"[[:space:]]
    - `skeleton_file = ~/.scv/analysis/{repo_name}/.codebones_skeleton.md`
    - `repo_path = {analysis_path}`（用于 codebones get/search 操作）
 
-### Step 6: 启动 project-analyzer Subagent
+### Step 6: 启动或执行 project-analyzer
 
-**启动专用分析 subagent：**
+**如果运行环境支持 subagent，启动专用分析 subagent：**
 
 ```
 Agent(
@@ -252,12 +259,18 @@ Agent(
 - **质量一致**：单仓库和批量分析使用相同分析引擎
 - **Token 效率**：大型代码库分析不会污染主 context
 
+**如果运行环境不支持 subagent：**
+1. 读取当前 skill 目录中的 `project-analyzer.md`
+2. 将同样的输入参数传给当前 agent 自己执行
+3. 在 `{output_dir}` 直接生成 4 个文档
+4. 成功后继续 Step 7 写入元数据
+
 ### Step 7: 写入元数据（仅 Git 仓库）
 
 subagent 成功完成后，记录已分析的 commit，以便下次运行时跳过未变更的仓库：
 
 ```bash
-python3 ~/.claude/skills/scv/scripts/scv_util.py write-metadata \
+python3 ~/.scv/scripts/scv_util.py write-metadata \
   --repo {analysis_path} \
   --commit {current_commit} \
   --output-dir ~/.scv/analysis/{repo_name}

@@ -1,6 +1,13 @@
 # scv run - Single Repository Deep Analysis
 
-Analyze a single code repository by launching a specialized `project-analyzer` subagent.
+Analyze a single code repository. Prefer the specialized `project-analyzer` analysis prompt; if the runtime supports subagents, delegate to a subagent, otherwise run the same workflow in the current agent.
+
+## Codex Compatibility
+
+- The analyzer prompt is located at `project-analyzer.md` in the current skill directory.
+- Helper scripts are located at `~/.scv/scripts`.
+- In Codex, if `/scv` is not a native slash command, treat `/scv run ...` as a natural-language trigger for this reference.
+- If the current runtime cannot launch a subagent, read `project-analyzer.md` and perform the analysis and document writing in the current agent.
 
 ## Usage
 
@@ -95,7 +102,7 @@ If no arguments, show usage and exit.
 5. **Get commit info** (Git repositories only):
 
    ```bash
-   python3 ~/.claude/skills/scv/scripts/scv_util.py get-commit-info \
+   python3 ~/.scv/scripts/scv_util.py get-commit-info \
      --repo {analysis_path}
    ```
 
@@ -173,9 +180,9 @@ cat ~/.scv/config.json 2>/dev/null | grep -q '"deep_analysis_enabled"[[:space:]]
 - Set `use_deep_analysis = false`
 - Continue with standard analysis
 
-### Step 6: Launch project-analyzer Subagent
+### Step 6: Launch or run project-analyzer
 
-**Launch the specialized subagent:**
+**If the runtime supports subagents, launch the specialized subagent:**
 
 ```
 Agent(
@@ -262,12 +269,18 @@ Agent(
 - **Consistent Quality**: Same analysis engine for both single and batch runs
 - **Token Efficiency**: Large codebase analysis doesn't pollute main context
 
+**If the runtime does not support subagents:**
+1. Read `project-analyzer.md` from the current skill directory
+2. Pass the same input parameters to the current agent
+3. Generate the 4 documents directly in `{output_dir}`
+4. Continue to Step 7 metadata writing after success
+
 ### Step 7: Write Metadata (Git repositories only)
 
 After the subagent completes successfully, record the analyzed commit so future runs can skip unchanged repos:
 
 ```bash
-python3 ~/.claude/skills/scv/scripts/scv_util.py write-metadata \
+python3 ~/.scv/scripts/scv_util.py write-metadata \
   --repo {analysis_path} \
   --commit {current_commit} \
   --output-dir ~/.scv/analysis/{repo_name}

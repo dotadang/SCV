@@ -22,6 +22,13 @@ description: |
 
 代码仓库深度分析工具，生成结构化项目文档。
 
+## 运行环境说明
+
+- 在 Codex 中，本 skill 默认安装到 `~/.agents/skills/scv`。分析 Prompt 作为 `project-analyzer.md` 放在 skill 目录内。
+- 在 Claude Code 中，分析 Prompt 也可以安装为 `~/.claude/agents/project-analyzer.md`。
+- 辅助脚本统一安装到 `~/.scv/scripts`；执行 shell 命令时使用这个稳定路径。
+- 如果当前运行环境没有 subagent 工具，`run` 命令就在当前 agent 内完成分析。`batchRun` 仍使用 `~/.scv/scripts/batch_manager.py` 做批次状态管理，并且只在运行环境允许时使用 agent 委派。
+
 ## 命令解析
 
 解析用户输入的第一个参数作为子命令：
@@ -53,7 +60,7 @@ description: |
 
 | 资源 | 路径 | 说明 |
 |------|------|------|
-| 分析 Prompt | `references/project-analyzer.md` | 核心分析逻辑 |
+| 分析 Prompt | `project-analyzer.md` | 核心分析逻辑 |
 | 模板文件 | `references/templates/*.md` | 文档生成模板 |
 | 配置文件 | `~/.scv/config.json` | 仓库列表和设置 |
 | 仓库存储 | `~/.scv/repos/` | 克隆的远程仓库 |

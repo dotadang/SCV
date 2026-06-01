@@ -1,6 +1,13 @@
 # scv batchRun - Batch Parallel Analysis
 
-Batch analyze multiple repositories using parallel `project-analyzer` subagents.
+Batch analyze multiple repositories using `project-analyzer`. Use parallel subagents when the runtime permits delegation; otherwise process each batch sequentially in the current agent while still using `batch_manager.py` for state.
+
+## Codex Compatibility
+
+- Helper scripts are located at `~/.scv/scripts`.
+- The analyzer prompt is located at `project-analyzer.md` in the current skill directory.
+- Codex users may invoke this as natural language (`/scv batchRun`) rather than a native slash command.
+- If subagent delegation is unavailable, keep the same batch loop but analyze each repo in the current agent and mark it complete or failed with `batch_manager.py`.
 
 ---
 
@@ -88,7 +95,7 @@ Please create a config file:
 If unavailable, use a timestamp-based fallback: `scv_batch_{timestamp}`.
 
 ```bash
-python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+python3 ~/.scv/scripts/batch_manager.py plan \
   --session {YOUR_SESSION_ID} \
   --config ~/.scv/config.json
 ```
@@ -96,7 +103,7 @@ python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
 For `--analyze-only` mode (skip git operations):
 
 ```bash
-python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+python3 ~/.scv/scripts/batch_manager.py plan \
   --session {YOUR_SESSION_ID} \
   --config ~/.scv/config.json \
   --analyze-only
@@ -175,7 +182,7 @@ TodoWrite([
 
 ```
 SESSION_ID = {YOUR_SESSION_ID}
-BM = "python3 ~/.claude/skills/scv/scripts/batch_manager.py"
+BM = "python3 ~/.scv/scripts/batch_manager.py"
 
 while True:
     result = Bash(f"{BM} next --session {SESSION_ID}")
@@ -260,10 +267,10 @@ Agent(
 
 ```bash
 # See what's still in-progress or pending
-python3 ~/.claude/skills/scv/scripts/batch_manager.py resume --session {SESSION_ID}
+python3 ~/.scv/scripts/batch_manager.py resume --session {SESSION_ID}
 
 # Call next again — returns the interrupted batch (idempotent)
-python3 ~/.claude/skills/scv/scripts/batch_manager.py next --session {SESSION_ID}
+python3 ~/.scv/scripts/batch_manager.py next --session {SESSION_ID}
 ```
 
 `next` is **idempotent**: if a batch is already `in_progress`, it returns that same batch instead of skipping forward.

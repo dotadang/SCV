@@ -1,6 +1,6 @@
 # SCV - Source Code Vault
 
-> A powerful codebase management and analysis skill for Claude Code
+> A powerful codebase management and analysis skill for Codex and Claude Code
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-SCV-blue.svg)](https://github.com/ProjAnvil/SCV)
 
@@ -40,7 +40,7 @@
 
 ### Prerequisites
 
-- **Claude Code CLI** - [Installation Guide](https://github.com/anthropics/claude-code)
+- **Codex or Claude Code CLI**
 - **codebones** (optional, for deep analysis) - Token-efficient code exploration tool
   ```bash
   # Install via pip
@@ -56,11 +56,17 @@
 Run the installation script:
 
 ```bash
-# Default (English)
+# Default: install English skill for Claude Code
 ./install.sh
 
-# Chinese version
+# Chinese version for Claude Code
 ./install.sh --lang=zh-cn
+
+# Codex target
+./install.sh --target=codex
+
+# Install for both Codex and Claude Code
+./install.sh --target=all --lang=zh-cn
 
 # Show help
 ./install.sh --help
@@ -69,8 +75,9 @@ Run the installation script:
 The script will:
 - Create `~/.scv` configuration directory
 - Copy the configuration file
-- Install the language-specific skill to `~/.claude/skills/scv`
-- Install the `project-analyzer` agent to `~/.claude/agents/`
+- Install shared helper scripts to `~/.scv/scripts`
+- Install the language-specific skill to `~/.claude/skills/scv` and `~/.claude/agents/` by default
+- Or install to `~/.agents/skills/scv` for Codex with `--target=codex`
 
 ### Install codebones (Optional, for Deep Analysis)
 
@@ -97,23 +104,26 @@ codebones --version
 ├── config.json      # Repository configuration
 ├── repos/           # Cloned remote repositories
 ├── analysis/        # Generated documentation
-└── sessions/        # batchRun session state (crash recovery)
+├── sessions/        # batchRun session state (crash recovery)
+└── scripts/         # Python helper scripts (scv_util, batch_manager, git_op)
 
-~/.claude/
-├── agents/
-│   └── project-analyzer.md   # Subagent for code analysis
+~/.agents/skills/scv/        # Codex default
+├── SKILL.md                 # Skill entry point
+├── project-analyzer.md      # Analyzer prompt
+├── scripts/                 # Linked helper scripts
+└── references/
+    ├── run.md
+    ├── batchRun.md
+    ├── gather.md
+    └── templates/
+        ├── README.template.md
+        ├── SUMMARY.template.md
+        ├── ARCHITECTURE.template.md
+        └── FILE_INDEX.template.md
+
+~/.claude/                   # Default target, also installed with --target=all
+├── agents/project-analyzer.md
 └── skills/scv/
-    ├── SKILL.md              # Skill entry point
-    ├── scripts/              # Python helper scripts (scv_util, batch_manager, git_op)
-    └── references/
-        ├── run.md
-        ├── batchRun.md
-        ├── gather.md
-        └── templates/
-            ├── README.template.md
-            ├── SUMMARY.template.md
-            ├── ARCHITECTURE.template.md
-            └── FILE_INDEX.template.md
 ```
 
 ## Quick Start

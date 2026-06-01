@@ -1,6 +1,13 @@
 # scv batchRun - 批量并行分析
 
-使用并行 `project-analyzer` subagent 批量分析多个仓库。
+使用 `project-analyzer` 批量分析多个仓库。运行环境允许委派时使用并行 subagent；否则仍使用 `batch_manager.py` 管理状态，并在当前 agent 中按批次顺序分析。
+
+## Codex 兼容说明
+
+- 辅助脚本位于 `~/.scv/scripts`。
+- 分析 Prompt 位于当前 skill 目录的 `project-analyzer.md`。
+- Codex 中没有 `/scv` 原生命令时，将 `/scv batchRun` 视为触发本 reference 的自然语言指令。
+- 如果不能使用 subagent，保留相同批次循环，但每个仓库由当前 agent 分析，并用 `batch_manager.py` 标记完成或失败。
 
 ---
 
@@ -88,7 +95,7 @@
 如果无法获取，使用时间戳生成回退值：`scv_batch_{timestamp}`。
 
 ```bash
-python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+python3 ~/.scv/scripts/batch_manager.py plan \
   --session {YOUR_SESSION_ID} \
   --config ~/.scv/config.json
 ```
@@ -96,7 +103,7 @@ python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
 `--analyze-only` 模式（跳过 git 操作）：
 
 ```bash
-python3 ~/.claude/skills/scv/scripts/batch_manager.py plan \
+python3 ~/.scv/scripts/batch_manager.py plan \
   --session {YOUR_SESSION_ID} \
   --config ~/.scv/config.json \
   --analyze-only
@@ -175,7 +182,7 @@ TodoWrite([
 
 ```
 SESSION_ID = {YOUR_SESSION_ID}
-BM = "python3 ~/.claude/skills/scv/scripts/batch_manager.py"
+BM = "python3 ~/.scv/scripts/batch_manager.py"
 
 while True:
     result = Bash(f"{BM} next --session {SESSION_ID}")
@@ -260,10 +267,10 @@ Agent(
 
 ```bash
 # 查看仍在进行中或待处理的任务
-python3 ~/.claude/skills/scv/scripts/batch_manager.py resume --session {SESSION_ID}
+python3 ~/.scv/scripts/batch_manager.py resume --session {SESSION_ID}
 
 # 再次调用 next — 返回被中断的批次（幂等操作）
-python3 ~/.claude/skills/scv/scripts/batch_manager.py next --session {SESSION_ID}
+python3 ~/.scv/scripts/batch_manager.py next --session {SESSION_ID}
 ```
 
 `next` 是**幂等的**：如果某批次已处于 `in_progress` 状态，它会返回同一批次而不是向前跳。崩溃后可安全重新运行，不会重复或遗漏任何仓库。
